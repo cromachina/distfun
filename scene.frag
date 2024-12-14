@@ -1,16 +1,41 @@
 #version 460
-
+#include "noise"
 #define PI 3.1415926538
 
 uniform mat4 view_matrix;
 uniform vec2 resolution;
 uniform float epsilon;
 uniform float fov;
-uniform int time;
+uniform float time;
 uniform int frame;
-uniform int max_steps;
 
 out vec4 frag_color;
+
+vec2 grad(vec3 v, float eps)
+{
+    float vx = snoise(v + vec3(eps, 0, 0));
+    float vy = snoise(v + vec3(0, eps, 0));
+    float nv = snoise(v);
+    return vec2(nv) - vec2(vx, vy);
+}
+
+vec3 grad(vec4 v, float eps)
+{
+    float vx = snoise(v + vec4(eps, 0, 0, 0));
+    float vy = snoise(v + vec4(0, eps, 0, 0));
+    float vz = snoise(v + vec4(0, 0, eps, 0));
+    float nv = snoise(v);
+    return vec3(nv) - vec3(vx, vy, vz);
+}
+
+vec3 warp(vec3 p, int octaves, float scale)
+{
+    for (int i = 1; i <= octaves; i++)
+    {
+        p += grad(vec4(p / i, time * 0.1), 1) * scale;
+    }
+    return p;
+}
 
 vec3 op_repeat(vec3 p, vec3 c)
 {
@@ -207,13 +232,23 @@ void main()
     float sx = gl_FragCoord.x * 2.0 / resolution.y - (resolution.x / resolution.y);
     float sy = gl_FragCoord.y * 2.0 / resolution.y - 1.0;
 
+    vec2 ss = vec2(sx, -sy);
+
+    // vec2 p = gl_FragCoord.xy / 200.0;
+    // for (int i = 2; i <= 4; i++)
+    // {
+    //     p += grad(vec3(p / i, time * 0.1), 1);
+    // }
+    //
+    //ss += p * 0.05;
+
     // Linear
     // float focal = 2 / tan(fov / 180 * PI);
     // vec3 ray_dir = normalize(eye_forward * focal + eye_right * u + eye_up * v);
 
     // Fisheye
     float fov_r = radians(fov) / 2;
-    vec3 ray_dir = fisheye(vec2(sx, -sy), fov_r);
+    vec3 ray_dir = fisheye(ss, fov_r);
     ray_dir = normalize(eye_pos - vec3(view_matrix * vec4(ray_dir, 1)));
 
     // Light parameters
@@ -234,9 +269,12 @@ void main()
 
     float t = 0.0;
 
+    int max_steps = 100;
+
     for (int i = 0; i < max_steps; ++i)
     {
         vec3 p = eye_pos + ray_dir * t;
+        p = warp(p, 2, 0.05);
 
         float light_d = sphere(p - light_pos, light_size);
         float sdf_dist = min(map(p), light_d);
@@ -259,7 +297,7 @@ void main()
             }
             else
             {
-                //color = base_color * light_intensity * light_color;
+                color = base_color * light_intensity * light_color;
                 vec4 ambient_surface = base_color * ambient_light;
                 vec4 lit_surface = ambient_surface + (light_intensity * light_color);
 
@@ -277,7 +315,7 @@ void main()
                 //color = vec4((normal + 1) / 2, 1);
 
                 // Color by steps.
-                //color = vec4(1.0 - i / float(max_steps));
+                color = vec4(1.0 - i / float(max_steps));
             }
 
             // Add fog.

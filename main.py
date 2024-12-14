@@ -28,6 +28,11 @@ class FileWatch():
             self.stamp = stamp
             self.on_changed(self.path)
 
+def uniform(prog, key, value):
+    val = prog.get(key, None)
+    if val is not None:
+        val.value = value
+
 class Distfun(mglw.WindowConfig):
     gl_version = 4,6
     title = "Distfun"
@@ -55,6 +60,8 @@ class Distfun(mglw.WindowConfig):
         self.move_speed = 0.05
         self.turn_speed = 0.015
 
+        self.show_ui = False
+
         # Render data
         self.render_program = None
         self.file_watch = FileWatch('scene.frag', self.reload_shaders)
@@ -64,8 +71,10 @@ class Distfun(mglw.WindowConfig):
 
     def reload_shaders(self, path):
         try:
-            print('loading shader:', path)
-            new_prog = self.ctx.program(vertex_shader=render_vert, fragment_shader=path.read_text())
+            self.ctx.includes['noise'] = pathlib.Path('noise.glsl').read_text()
+            frag = pathlib.Path('scene.frag').read_text()
+
+            new_prog = self.ctx.program(vertex_shader=render_vert, fragment_shader=frag)
             print(self.ctx.error)
             if self.render_program:
                 self.render_program.release()
@@ -111,62 +120,64 @@ class Distfun(mglw.WindowConfig):
         imgui.render()
         self.imgui.render(imgui.get_draw_data())
 
-    def render(self, time, frametime):
+    def on_render(self, time, frametime):
         self.file_watch.check()
         self.process_input(time, frametime)
         if self.render_program:
             view_matrix = glm.translate(self.position)
             view_matrix = view_matrix * glm.mat4(glm.quat(glm.vec3(self.pitch, self.yaw, 0.0)))
             self.render_program['view_matrix'].write(view_matrix)
-            self.render_program['resolution'] = self.window_size
-            self.render_program['epsilon'] = self.epsilon
-            self.render_program['fov'] = self.fov
-            self.render_program['max_steps'] = 100
-            #self.render_program['time'] = time
-            #self.render_program['frame'] = self.frame
+            uniform(self.render_program, 'resolution', self.window_size)
+            uniform(self.render_program, 'epsilon', self.epsilon)
+            uniform(self.render_program, 'fov', self.fov)
+            uniform(self.render_program, 'time', time)
+            uniform(self.render_program, 'frame', self.frame)
             self.render_vao.render()
-        self.render_ui(time, frametime)
+        if self.show_ui:
+            self.render_ui(time, frametime)
         self.frame += 1
 
-    def resize(self, width, height):
+    def on_resize(self, width, height):
         self.window_size = self.wnd.size
         self.imgui.resize(width, height)
 
-    def key_event(self, key, action, modifiers):
+    def on_key_event(self, key, action, modifiers):
         if action == self.wnd.keys.ACTION_PRESS:
             self.keys.add(key)
+            if self.wnd.keys.R == key:
+                self.show_ui = not self.show_ui
         elif action == self.wnd.keys.ACTION_RELEASE:
             self.keys.remove(key)
 
         if not self.wnd.mouse_exclusivity:
             self.imgui.key_event(key, action, modifiers)
 
-    def mouse_position_event(self, x, y, dx, dy):
+    def on_mouse_position_event(self, x, y, dx, dy):
         if not self.wnd.mouse_exclusivity:
             self.imgui.mouse_position_event(x, y, dx, dy)
         else:
             self.pitch = glm.clamp(self.pitch + self.turn_speed * -dy, -glm.half_pi(), glm.half_pi())
             self.yaw = self.yaw + self.turn_speed * dx
 
-    def mouse_drag_event(self, x, y, dx, dy):
+    def on_mouse_drag_event(self, x, y, dx, dy):
         if not self.wnd.mouse_exclusivity:
             self.imgui.mouse_drag_event(x, y, dx, dy)
 
-    def mouse_scroll_event(self, x_offset, y_offset):
+    def on_mouse_scroll_event(self, x_offset, y_offset):
         if not self.wnd.mouse_exclusivity:
             self.imgui.mouse_scroll_event(x_offset, y_offset)
 
-    def mouse_press_event(self, x, y, button):
+    def on_mouse_press_event(self, x, y, button):
         if not self.imgui.io.want_capture_mouse:
             self.wnd.mouse_exclusivity = True
         if not self.wnd.mouse_exclusivity:
             self.imgui.mouse_press_event(x, y, button)
 
-    def mouse_release_event(self, x: int, y: int, button: int):
+    def on_mouse_release_event(self, x: int, y: int, button: int):
         if not self.wnd.mouse_exclusivity:
             self.imgui.mouse_release_event(x, y, button)
 
-    def unicode_char_entered(self, char):
+    def on_unicode_char_entered(self, char):
         if not self.wnd.mouse_exclusivity:
             self.imgui.unicode_char_entered(char)
 

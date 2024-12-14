@@ -1,4 +1,4 @@
-pyglm==2.7.0
-imgui==1.4.1
-moderngl_window==2.4.3
-numpy==1.24.2
+pyglm
+imgui
+moderngl_window
+numpy
